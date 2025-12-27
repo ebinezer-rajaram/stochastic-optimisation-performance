@@ -108,9 +108,12 @@ def pso_optimize(
 
         # Break if budget exhausted
         if eval_count >= budget:
+            # Track best position even if we hit budget mid-iteration
+            if global_best_position is not None:
+                best_x_by_iter.append(global_best_position.copy())
             break
 
-        # Track best position for this iteration
+        # Track best position for this iteration (always append)
         if global_best_position is not None:
             best_x_by_iter.append(global_best_position.copy())
 
@@ -134,9 +137,7 @@ def pso_optimize(
             # Clip positions to bounds
             positions[i] = clip_bounds(positions[i], low, high)
 
-    # Final tracking - add final best if we did at least one iteration
-    if global_best_position is not None and len(best_x_by_iter) == 0:
-        best_x_by_iter.append(global_best_position.copy())
+    # Note: best_x_by_iter is now tracked every iteration, so no need for final fallback
 
     # Assign basin if minima provided
     basin_id = -1

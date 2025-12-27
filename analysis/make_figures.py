@@ -573,6 +573,10 @@ def plot_trajectories(raw_results: Dict[str, Dict[str, List[Dict]]],
                 ax.plot(trajectory[-1, 0], trajectory[-1, 1],
                        'bs', markersize=10, markeredgecolor='white',
                        markeredgewidth=2, label='End')
+            else:
+                # No trajectory data available
+                ax.text(0, 0, 'No trajectory data',
+                       ha='center', va='center', fontsize=10, color='gray')
 
             ax.set_xlim([-15, 15])
             ax.set_ylim([-15, 15])
@@ -580,7 +584,12 @@ def plot_trajectories(raw_results: Dict[str, Dict[str, List[Dict]]],
             ax.set_ylabel('x₂', fontweight='bold')
 
             # Add title with run info
-            evals_info = f"evals={run['evals_to_target']}" if run['evals_to_target'] else f"f={run['final_best_f']:.4f}"
+            # For failed runs, show "Failed (no target hit)" with final f value
+            if run['evals_to_target'] is None:
+                evals_info = f"Failed (no target hit)\nf={run['final_best_f']:.4f}"
+            else:
+                evals_info = f"evals={run['evals_to_target']}"
+
             ax.set_title(f"{algo} - {title_suffix}\n{evals_info} (seed={run['seed']})",
                         fontweight='bold')
             ax.legend(loc='upper right', fontsize=8, framealpha=0.8)

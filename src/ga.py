@@ -178,9 +178,12 @@ def ga_optimize(
 
         # Break if budget exhausted
         if eval_count >= budget:
+            # Track best position even if we hit budget mid-generation
+            if global_best_x is not None:
+                best_x_by_iter.append(global_best_x.copy())
             break
 
-        # Track best position for this generation
+        # Track best position for this generation (always append)
         if global_best_x is not None:
             best_x_by_iter.append(global_best_x.copy())
 
