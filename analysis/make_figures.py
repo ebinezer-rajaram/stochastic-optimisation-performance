@@ -133,6 +133,42 @@ def get_best_configs(df: pd.DataFrame, n_configs: int = 2) -> Dict[str, List[str
     return best_configs
 
 
+def get_worst_configs(df: pd.DataFrame) -> Dict[str, str]:
+    """
+    Identify the worst configuration per algorithm based on success rate
+    and median evals_to_target.
+
+    Args:
+        df: Summary DataFrame
+
+    Returns:
+        Dict mapping algo -> worst config_id
+    """
+    worst_configs = {}
+
+    for algo in df['algo'].unique():
+        algo_data = df[df['algo'] == algo]
+
+        # Group by config
+        config_stats = algo_data.groupby('config').agg({
+            'success': 'mean',  # success rate
+            'evals_to_target': lambda x: x[x > 0].median() if (x > 0).any() else float('inf')
+        }).reset_index()
+
+        config_stats.columns = ['config', 'success_rate', 'median_evals']
+
+        # Sort by success rate (ascending), then by median evals (descending)
+        config_stats = config_stats.sort_values(
+            by=['success_rate', 'median_evals'],
+            ascending=[True, False]
+        )
+
+        # Take worst config
+        worst_configs[algo] = config_stats.head(1)['config'].iloc[0]
+
+    return worst_configs
+
+
 # ============================================================================
 # FIGURE 1: CONVERGENCE PLOT WITH MEDIAN AND IQR
 # ============================================================================
@@ -143,6 +179,7 @@ def plot_convergence(raw_results: Dict[str, Dict[str, List[Dict]]],
     """
     Plot convergence curves showing median best_f_by_eval with IQR bands
     for the best 1-2 configurations per algorithm.
+    Curves terminate at the median evaluation where target is reached.
     """
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -165,6 +202,20 @@ def plot_convergence(raw_results: Dict[str, Dict[str, List[Dict]]],
             median_curve = np.median(curves_array, axis=0)
             q25 = np.percentile(curves_array, 25, axis=0)
             q75 = np.percentile(curves_array, 75, axis=0)
+
+            # Find where median curve reaches target
+            target_idx = None
+            for i, val in enumerate(median_curve):
+                if val <= F_STAR:
+                    target_idx = i
+                    break
+
+            # Truncate curves at target (if reached)
+            if target_idx is not None:
+                median_curve = median_curve[:target_idx+1]
+                q25 = q25[:target_idx+1]
+                q75 = q75[:target_idx+1]
+
             evals = np.arange(1, len(median_curve) + 1)
 
             # Plot median line
@@ -183,12 +234,113 @@ def plot_convergence(raw_results: Dict[str, Dict[str, List[Dict]]],
     ax.set_title("Convergence Curves (Median with IQR)", fontsize=14, fontweight="bold")
     ax.legend(loc='best', framealpha=0.9)
     ax.grid(True, alpha=0.3, linestyle='--')
-    ax.set_xlim(left=1)
+    ax.set_xlim(left=1, right=600)
 
     plt.tight_layout()
     output_path = FIGURES_DIR / output_file
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"[SAVED] Convergence plot to {output_path}")
+    plt.close()
+
+
+def plot_convergence_best_vs_worst(raw_results: Dict[str, Dict[str, List[Dict]]],
+                                     best_configs: Dict[str, List[str]],
+                                     worst_configs: Dict[str, str],
+                                     df: pd.DataFrame,
+                                     output_file: str = "convergence_best_vs_worst.png"):
+    """
+    Plot convergence curves comparing best vs worst configurations.
+    Shows full 1000 evaluation budget to illustrate failure modes.
+    """
+    fig, ax = plt.subplots(figsize=(12, 7))
+
+    # Color scheme: best configs in solid, worst configs in dashed
+    colors = {'PSO': ['#1f77b4', '#ff7f0e'], 'GA': ['#2ca02c', '#d62728']}
+
+    for algo_idx, (algo, best_config_list) in enumerate(best_configs.items()):
+        best_config = best_config_list[0]  # Use best config only
+        worst_config = worst_configs[algo]
+
+        # Get success rates for labeling
+        best_success = df[(df['algo'] == algo) & (df['config'] == best_config)]['success'].mean()
+        worst_success = df[(df['algo'] == algo) & (df['config'] == worst_config)]['success'].mean()
+
+        color = colors[algo][0] if algo == 'PSO' else colors[algo][1]
+
+        # Plot BEST config
+        if best_config in raw_results[algo]:
+            runs = raw_results[algo][best_config]
+            curves = [run["best_f_by_eval"] for run in runs]
+
+            max_len = max(len(c) for c in curves)
+            curves_padded = [c + [c[-1]] * (max_len - len(c)) for c in curves]
+            curves_array = np.array(curves_padded)
+
+            median_curve = np.median(curves_array, axis=0)
+            q25 = np.percentile(curves_array, 25, axis=0)
+            q75 = np.percentile(curves_array, 75, axis=0)
+            evals = np.arange(1, len(median_curve) + 1)
+
+            # Parse config for label
+            if algo == 'PSO':
+                parts = best_config.split('_')
+                swarm = parts[0].replace('swarm', '')
+                w = parts[1].replace('w', '')
+                label = f'{algo} Best (swarm={swarm}, w={w}, {best_success:.0%} success)'
+            else:
+                parts = best_config.split('_')
+                pop = parts[0].replace('pop', '')
+                sigma = parts[1].replace('sigma', '')
+                label = f'{algo} Best (pop={pop}, σ={sigma}, {best_success:.0%} success)'
+
+            line = ax.plot(evals, median_curve, label=label, linewidth=2.5,
+                          alpha=0.9, color=color, linestyle='-')
+            ax.fill_between(evals, q25, q75, alpha=0.2, color=color)
+
+        # Plot WORST config
+        if worst_config in raw_results[algo]:
+            runs = raw_results[algo][worst_config]
+            curves = [run["best_f_by_eval"] for run in runs]
+
+            max_len = max(len(c) for c in curves)
+            curves_padded = [c + [c[-1]] * (max_len - len(c)) for c in curves]
+            curves_array = np.array(curves_padded)
+
+            median_curve = np.median(curves_array, axis=0)
+            q25 = np.percentile(curves_array, 25, axis=0)
+            q75 = np.percentile(curves_array, 75, axis=0)
+            evals = np.arange(1, len(median_curve) + 1)
+
+            # Parse config for label
+            if algo == 'PSO':
+                parts = worst_config.split('_')
+                swarm = parts[0].replace('swarm', '')
+                w = parts[1].replace('w', '')
+                label = f'{algo} Worst (swarm={swarm}, w={w}, {worst_success:.0%} success)'
+            else:
+                parts = worst_config.split('_')
+                pop = parts[0].replace('pop', '')
+                sigma = parts[1].replace('sigma', '')
+                label = f'{algo} Worst (pop={pop}, σ={sigma}, {worst_success:.0%} success)'
+
+            line = ax.plot(evals, median_curve, label=label, linewidth=2.5,
+                          alpha=0.9, color=color, linestyle='--')
+            ax.fill_between(evals, q25, q75, alpha=0.15, color=color)
+
+    ax.axhline(y=F_STAR, color='red', linestyle=':', linewidth=2,
+               alpha=0.7, label=f'Target: {F_STAR:.4f}')
+
+    ax.set_xlabel("Function Evaluations", fontsize=13, fontweight='bold')
+    ax.set_ylabel("Best Function Value", fontsize=13, fontweight='bold')
+    ax.set_title("Convergence: Best vs Worst Configurations", fontsize=15, fontweight="bold")
+    ax.legend(loc='lower right', framealpha=0.95, fontsize=10)
+    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.set_xlim(left=1, right=1000)
+
+    plt.tight_layout()
+    output_path = FIGURES_DIR / output_file
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    print(f"[SAVED] Best vs Worst convergence plot to {output_path}")
     plt.close()
 
 
@@ -259,6 +411,8 @@ def plot_heatmaps(df: pd.DataFrame, algo: str, grid_params: Dict[str, List],
         grid_params: Dict mapping parameter names to their grid values
         output_file: Output filename
     """
+    from matplotlib.colors import TwoSlopeNorm, Normalize
+
     # Determine which parameters vary (for PSO: swarm_size and w; for GA: pop_size and mut_sigma)
     if algo == "PSO":
         param1_name, param2_name = "swarm_size", "w"
@@ -318,8 +472,8 @@ def plot_heatmaps(df: pd.DataFrame, algo: str, grid_params: Dict[str, List],
                     evals_matrix[i, j] = np.nan
 
     # Create figure with 3 subplots
-    fig = plt.figure(figsize=(16, 5))
-    gs = GridSpec(1, 3, figure=fig, wspace=0.3)
+    fig = plt.figure(figsize=(18, 5))
+    gs = GridSpec(1, 3, figure=fig, wspace=0.45)
 
     # Heatmap 1: Success rate
     ax1 = fig.add_subplot(gs[0, 0])
@@ -329,59 +483,154 @@ def plot_heatmaps(df: pd.DataFrame, algo: str, grid_params: Dict[str, List],
     ax1.set_yticks(range(n_param2))
     ax1.set_xticklabels(param1_values)
     ax1.set_yticklabels(param2_values)
-    ax1.set_xlabel(param1_name, fontweight='bold')
-    ax1.set_ylabel(param2_name, fontweight='bold')
-    ax1.set_title("Success Rate", fontweight='bold')
+    ax1.set_xlabel(param1_name, fontweight='bold', fontsize=11)
+    ax1.set_ylabel(param2_name, fontweight='bold', fontsize=11)
+    ax1.set_title("Success Rate", fontweight='bold', fontsize=12)
 
-    # Add text annotations
+    # Add text annotations with adaptive coloring
     for i in range(n_param2):
         for j in range(n_param1):
-            text = ax1.text(j, i, f'{success_matrix[i, j]:.2f}',
-                          ha="center", va="center", color="black", fontsize=9)
+            value = success_matrix[i, j]
+            text_color = 'white' if value < 0.5 else 'black'
+            text = ax1.text(j, i, f'{value:.0%}',
+                          ha="center", va="center", color=text_color,
+                          fontsize=10, fontweight='bold')
 
-    plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+    cbar1 = plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+    cbar1.set_label('Success Rate', fontweight='bold')
 
     # Heatmap 2: Median final_best_f
+    # Use GREEN for target F_STAR = -20.626, RED for deviations
     ax2 = fig.add_subplot(gs[0, 1])
-    im2 = ax2.imshow(final_f_matrix, cmap='RdYlGn', aspect='auto', origin='lower')
+    from matplotlib.colors import LinearSegmentedColormap
+
+    # Target tolerance for success
+    TARGET_TOLERANCE = 1e-3
+
+    # Calculate appropriate range based on data
+    f_min = np.min(final_f_matrix)
+    f_max = np.max(final_f_matrix)
+    f_range = f_max - f_min
+
+    # Calculate symmetric range around F_STAR (target)
+    max_deviation = max(abs(f_max - F_STAR), abs(f_min - F_STAR))
+
+    # Set symmetric bounds around target for colormap
+    if max_deviation < 0.01:
+        margin = 0.01
+    elif max_deviation < 0.1:
+        margin = max_deviation * 1.5
+    else:
+        margin = max_deviation * 1.2
+
+    vmin = F_STAR - margin
+    vmax = F_STAR + margin
+
+    # Create custom diverging colormap: RED at both ends, GREEN at center
+    # Use RdYlGn color scheme but make it symmetric with sharper transitions
+    colors = [
+        '#d73027',  # Red (far below target)
+        '#fc8d59',  # Orange
+        '#fee08b',  # Light yellow
+        '#1a9850',  # Dark green (AT TARGET - center)
+        '#fee08b',  # Light yellow
+        '#fc8d59',  # Orange
+        '#d73027'   # Red (far above target)
+    ]
+    n_bins = 128  # Fewer bins for sharper transitions
+    cmap = LinearSegmentedColormap.from_list('target_green', colors, N=n_bins)
+
+    # Use TwoSlopeNorm to put center of colormap at F_STAR (which maps to green)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=F_STAR, vmax=vmax)
+
+    im2 = ax2.imshow(final_f_matrix, cmap=cmap, aspect='auto',
+                     origin='lower', norm=norm)
     ax2.set_xticks(range(n_param1))
     ax2.set_yticks(range(n_param2))
     ax2.set_xticklabels(param1_values)
     ax2.set_yticklabels(param2_values)
-    ax2.set_xlabel(param1_name, fontweight='bold')
-    ax2.set_ylabel(param2_name, fontweight='bold')
-    ax2.set_title("Median Final Best f", fontweight='bold')
+    ax2.set_xlabel(param1_name, fontweight='bold', fontsize=11)
+    ax2.set_ylabel(param2_name, fontweight='bold', fontsize=11)
+    ax2.set_title("Median Final Objective Value", fontweight='bold', fontsize=12)
 
-    # Add text annotations
+    # Add text annotations with adaptive coloring based on distance from target
     for i in range(n_param2):
         for j in range(n_param1):
-            text = ax2.text(j, i, f'{final_f_matrix[i, j]:.2f}',
-                          ha="center", va="center", color="black", fontsize=8)
+            value = final_f_matrix[i, j]
+            # Distance from target (normalized)
+            distance_from_target = abs(value - F_STAR)
+            norm_distance = distance_from_target / margin if margin > 0 else 0
 
-    plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
+            # Color logic: Green (near target) = black text
+            #              Yellow (medium distance) = black text
+            #              Red (far from target) = white text
+            if norm_distance < 0.7:  # Green or yellow background
+                text_color = 'black'
+            else:  # Red background
+                text_color = 'white'
+
+            text = ax2.text(j, i, f'{value:.3f}',
+                          ha="center", va="center", color=text_color,
+                          fontsize=9, fontweight='bold')
+
+    cbar2 = plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
+    cbar2.set_label('Objective Value (target={:.4f})'.format(F_STAR), fontweight='bold')
 
     # Heatmap 3: Median evals_to_target (successful runs)
     ax3 = fig.add_subplot(gs[0, 2])
-    im3 = ax3.imshow(evals_matrix, cmap='RdYlGn_r', aspect='auto', origin='lower')
+
+    # For evaluations, use a colormap where lower is better (green)
+    # Calculate reasonable bounds for the colormap
+    valid_evals = evals_matrix[~np.isnan(evals_matrix)]
+    if len(valid_evals) > 0:
+        evals_min = np.min(valid_evals)
+        evals_max = np.max(valid_evals)
+        evals_range = evals_max - evals_min
+
+        # Use percentile-based bounds to avoid extreme outliers
+        evals_p10 = np.percentile(valid_evals, 10)
+        evals_p90 = np.percentile(valid_evals, 90)
+
+        # If range is large, use percentile bounds, otherwise use actual range
+        if evals_range > 500:
+            vmin_evals = max(evals_min, evals_p10 - 0.1 * (evals_p90 - evals_p10))
+            vmax_evals = min(evals_max, evals_p90 + 0.1 * (evals_p90 - evals_p10))
+        else:
+            vmin_evals = evals_min
+            vmax_evals = evals_max
+    else:
+        vmin_evals = 0
+        vmax_evals = 1000
+
+    im3 = ax3.imshow(evals_matrix, cmap='RdYlGn_r', aspect='auto',
+                     origin='lower', vmin=vmin_evals, vmax=vmax_evals)
     ax3.set_xticks(range(n_param1))
     ax3.set_yticks(range(n_param2))
     ax3.set_xticklabels(param1_values)
     ax3.set_yticklabels(param2_values)
-    ax3.set_xlabel(param1_name, fontweight='bold')
-    ax3.set_ylabel(param2_name, fontweight='bold')
-    ax3.set_title("Median Evals to Target (Success)", fontweight='bold')
+    ax3.set_xlabel(param1_name, fontweight='bold', fontsize=11)
+    ax3.set_ylabel(param2_name, fontweight='bold', fontsize=11)
+    ax3.set_title("Median Evaluations to Target", fontweight='bold', fontsize=12)
 
-    # Add text annotations
+    # Add text annotations with adaptive coloring
     for i in range(n_param2):
         for j in range(n_param1):
             if not np.isnan(evals_matrix[i, j]):
-                text = ax3.text(j, i, f'{int(evals_matrix[i, j])}',
-                              ha="center", va="center", color="black", fontsize=8)
+                value = evals_matrix[i, j]
+                # Determine text color based on normalized value (reversed because lower is better)
+                # Green (low/good) = black text, Yellow (medium) = black text, Red (high/bad) = white text
+                normalized_value = (value - vmin_evals) / (vmax_evals - vmin_evals) if vmax_evals > vmin_evals else 0.5
+                text_color = 'black' if normalized_value < 0.7 else 'white'
+                text = ax3.text(j, i, f'{int(value)}',
+                              ha="center", va="center", color=text_color,
+                              fontsize=9, fontweight='bold')
             else:
                 text = ax3.text(j, i, 'N/A',
-                              ha="center", va="center", color="gray", fontsize=8)
+                              ha="center", va="center", color="darkgray",
+                              fontsize=9, fontweight='bold')
 
-    plt.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04)
+    cbar3 = plt.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04)
+    cbar3.set_label('Evaluations (lower=better)', fontweight='bold')
 
     fig.suptitle(f"{algo} Hyperparameter Performance", fontsize=16, fontweight='bold', y=1.02)
 
@@ -513,95 +762,201 @@ def select_representative_runs(raw_results: Dict[str, Dict[str, List[Dict]]],
     return fast_run, slow_run, failed_run
 
 
-def plot_trajectories(raw_results: Dict[str, Dict[str, List[Dict]]],
-                     best_configs: Dict[str, List[str]],
-                     output_file: str = "trajectories.png"):
+def plot_trajectories_single_algo(raw_results: Dict[str, Dict[str, List[Dict]]],
+                                  algo: str,
+                                  best_config: str,
+                                  worst_config: str,
+                                  df: pd.DataFrame,
+                                  output_file: str):
     """
-    Plot trajectory plots on contour map for 3 representative runs per algorithm.
+    Plot 2×2 grid for a single algorithm showing:
+    Row 1: Best config (fast success, slow success)
+    Row 2: Worst config (2 failed runs)
     """
-    n_algos = len(best_configs)
-    fig = plt.figure(figsize=(18, 6 * n_algos))
-    gs = GridSpec(n_algos, 3, figure=fig, hspace=0.3, wspace=0.3)
+    fig = plt.figure(figsize=(14, 14))
 
-    algo_idx = 0
-    for algo, configs in best_configs.items():
-        best_config = configs[0]
+    # ========== ROW 1: BEST CONFIG ==========
+    if best_config in raw_results[algo]:
+        best_success_rate = df[(df['algo'] == algo) & (df['config'] == best_config)]['success'].mean()
 
-        if best_config not in raw_results[algo]:
-            continue
+        # Get representative runs
+        fast_run, slow_run, _ = select_representative_runs(raw_results, algo, best_config)
 
-        # Select representative runs
-        fast_run, slow_run, failed_run = select_representative_runs(
-            raw_results, algo, best_config
-        )
+        # If no slow run, use a median one
+        if slow_run is None and fast_run is not None:
+            runs = raw_results[algo][best_config]
+            successful = [r for r in runs if r['evals_to_target'] is not None]
+            if len(successful) > 0:
+                evals = [r['evals_to_target'] for r in successful]
+                median_evals = np.median(evals)
+                slow_run = min(successful, key=lambda r: abs(r['evals_to_target'] - median_evals))
 
-        runs = [
-            (fast_run, "Success (Fast)", 'green'),
-            (slow_run, "Success (Slow)", 'orange'),
-            (failed_run, "Failed", 'red')
-        ]
+        # Plot fast success (top-left)
+        if fast_run is not None:
+            ax = fig.add_subplot(2, 2, 1)
+            create_contour_background(ax, bounds=(-15, 15))
 
-        for col_idx, (run, title_suffix, color) in enumerate(runs):
-            ax = fig.add_subplot(gs[algo_idx, col_idx])
-
-            if run is None:
-                ax.text(0.5, 0.5, 'No data available',
-                       ha='center', va='center', fontsize=12)
-                ax.set_xlim([-15, 15])
-                ax.set_ylim([-15, 15])
-                ax.set_title(f"{algo} - {title_suffix}", fontweight='bold')
-                continue
-
-            # Create contour background
-            create_contour_background(ax)
-
-            # Plot trajectory from best_x_by_iter
-            trajectory = np.array([np.array(x) for x in run['best_x_by_iter']])
+            trajectory = np.array([np.array(x) for x in fast_run['best_x_by_iter']])
 
             if len(trajectory) > 0:
-                # Plot trajectory line
+                x_min, x_max = trajectory[:, 0].min(), trajectory[:, 0].max()
+                y_min, y_max = trajectory[:, 1].min(), trajectory[:, 1].max()
+
+                x_range = x_max - x_min
+                y_range = y_max - y_min
+                padding_x = max(0.5, x_range * 0.2)
+                padding_y = max(0.5, y_range * 0.2)
+
                 ax.plot(trajectory[:, 0], trajectory[:, 1],
-                       color=color, linewidth=2, alpha=0.8, marker='o',
-                       markersize=3, label='Best solution path')
+                       color='green', linewidth=2.5, alpha=0.9, marker='o',
+                       markersize=5, label='Best solution path')
 
-                # Mark start
                 ax.plot(trajectory[0, 0], trajectory[0, 1],
-                       'go', markersize=10, markeredgecolor='white',
-                       markeredgewidth=2, label='Start')
+                       'go', markersize=12, markeredgecolor='white',
+                       markeredgewidth=2, label='Start', zorder=5)
 
-                # Mark end
                 ax.plot(trajectory[-1, 0], trajectory[-1, 1],
-                       'bs', markersize=10, markeredgecolor='white',
-                       markeredgewidth=2, label='End')
-            else:
-                # No trajectory data available
-                ax.text(0, 0, 'No trajectory data',
-                       ha='center', va='center', fontsize=10, color='gray')
+                       'bs', markersize=12, markeredgecolor='white',
+                       markeredgewidth=2, label='End', zorder=5)
 
-            ax.set_xlim([-15, 15])
-            ax.set_ylim([-15, 15])
-            ax.set_xlabel('x₁', fontweight='bold')
-            ax.set_ylabel('x₂', fontweight='bold')
+                ax.set_xlim([x_min - padding_x, x_max + padding_x])
+                ax.set_ylim([y_min - padding_y, y_max + padding_y])
 
-            # Add title with run info
-            # For failed runs, show "Failed (no target hit)" with final f value
-            if run['evals_to_target'] is None:
-                evals_info = f"Failed (no target hit)\nf={run['final_best_f']:.4f}"
-            else:
-                evals_info = f"evals={run['evals_to_target']}"
+            ax.set_xlabel('x₁', fontweight='bold', fontsize=11)
+            ax.set_ylabel('x₂', fontweight='bold', fontsize=11)
+            ax.set_title(f"Best Config - Fast Success\n{best_success_rate:.0%} success | evals={fast_run['evals_to_target']} | seed={fast_run['seed']}",
+                        fontweight='bold', fontsize=11)
+            ax.legend(loc='best', fontsize=9, framealpha=0.9)
+            ax.grid(True, alpha=0.4, linestyle='--')
 
-            ax.set_title(f"{algo} - {title_suffix}\n{evals_info} (seed={run['seed']})",
-                        fontweight='bold')
-            ax.legend(loc='upper right', fontsize=8, framealpha=0.8)
-            ax.grid(True, alpha=0.3, linestyle='--')
+        # Plot slow success (top-right)
+        if slow_run is not None:
+            ax = fig.add_subplot(2, 2, 2)
+            create_contour_background(ax, bounds=(-15, 15))
 
-        algo_idx += 1
+            trajectory = np.array([np.array(x) for x in slow_run['best_x_by_iter']])
 
-    plt.suptitle("Representative Trajectory Plots", fontsize=18, fontweight='bold', y=0.995)
+            if len(trajectory) > 0:
+                x_min, x_max = trajectory[:, 0].min(), trajectory[:, 0].max()
+                y_min, y_max = trajectory[:, 1].min(), trajectory[:, 1].max()
+
+                x_range = x_max - x_min
+                y_range = y_max - y_min
+                padding_x = max(0.5, x_range * 0.2)
+                padding_y = max(0.5, y_range * 0.2)
+
+                ax.plot(trajectory[:, 0], trajectory[:, 1],
+                       color='orange', linewidth=2.5, alpha=0.9, marker='o',
+                       markersize=5, label='Best solution path')
+
+                ax.plot(trajectory[0, 0], trajectory[0, 1],
+                       'go', markersize=12, markeredgecolor='white',
+                       markeredgewidth=2, label='Start', zorder=5)
+
+                ax.plot(trajectory[-1, 0], trajectory[-1, 1],
+                       'bs', markersize=12, markeredgecolor='white',
+                       markeredgewidth=2, label='End', zorder=5)
+
+                ax.set_xlim([x_min - padding_x, x_max + padding_x])
+                ax.set_ylim([y_min - padding_y, y_max + padding_y])
+
+            ax.set_xlabel('x₁', fontweight='bold', fontsize=11)
+            ax.set_ylabel('x₂', fontweight='bold', fontsize=11)
+            ax.set_title(f"Best Config - Slow Success\n{best_success_rate:.0%} success | evals={slow_run['evals_to_target']} | seed={slow_run['seed']}",
+                        fontweight='bold', fontsize=11)
+            ax.legend(loc='best', fontsize=9, framealpha=0.9)
+            ax.grid(True, alpha=0.4, linestyle='--')
+
+    # ========== ROW 2: WORST CONFIG ==========
+    if worst_config in raw_results[algo]:
+        worst_success_rate = df[(df['algo'] == algo) & (df['config'] == worst_config)]['success'].mean()
+
+        # Get representative runs (fast success and failure)
+        fast_success_run, _, failed_run = select_representative_runs(raw_results, algo, worst_config)
+
+        # Plot fast success (bottom-left)
+        if fast_success_run is not None:
+            ax = fig.add_subplot(2, 2, 3)
+            create_contour_background(ax, bounds=(-15, 15))
+
+            trajectory = np.array([np.array(x) for x in fast_success_run['best_x_by_iter']])
+
+            if len(trajectory) > 0:
+                x_min, x_max = trajectory[:, 0].min(), trajectory[:, 0].max()
+                y_min, y_max = trajectory[:, 1].min(), trajectory[:, 1].max()
+
+                x_range = x_max - x_min
+                y_range = y_max - y_min
+                padding_x = max(0.5, x_range * 0.2)
+                padding_y = max(0.5, y_range * 0.2)
+
+                ax.plot(trajectory[:, 0], trajectory[:, 1],
+                       color='green', linewidth=2.5, alpha=0.9, marker='o',
+                       markersize=5, label='Best solution path')
+
+                ax.plot(trajectory[0, 0], trajectory[0, 1],
+                       'go', markersize=12, markeredgecolor='white',
+                       markeredgewidth=2, label='Start', zorder=5)
+
+                ax.plot(trajectory[-1, 0], trajectory[-1, 1],
+                       'bs', markersize=12, markeredgecolor='white',
+                       markeredgewidth=2, label='End', zorder=5)
+
+                ax.set_xlim([x_min - padding_x, x_max + padding_x])
+                ax.set_ylim([y_min - padding_y, y_max + padding_y])
+
+            ax.set_xlabel('x₁', fontweight='bold', fontsize=11)
+            ax.set_ylabel('x₂', fontweight='bold', fontsize=11)
+            ax.set_title(f"Worst Config - Fast Success\n{worst_success_rate:.0%} success | evals={fast_success_run['evals_to_target']} | seed={fast_success_run['seed']}",
+                        fontweight='bold', fontsize=11)
+            ax.legend(loc='best', fontsize=9, framealpha=0.9)
+            ax.grid(True, alpha=0.4, linestyle='--')
+
+        # Plot failure (bottom-right)
+        if failed_run is not None:
+            ax = fig.add_subplot(2, 2, 4)
+            create_contour_background(ax, bounds=(-15, 15))
+
+            trajectory = np.array([np.array(x) for x in failed_run['best_x_by_iter']])
+
+            if len(trajectory) > 0:
+                x_min, x_max = trajectory[:, 0].min(), trajectory[:, 0].max()
+                y_min, y_max = trajectory[:, 1].min(), trajectory[:, 1].max()
+
+                x_range = x_max - x_min
+                y_range = y_max - y_min
+                padding_x = max(0.5, x_range * 0.2)
+                padding_y = max(0.5, y_range * 0.2)
+
+                ax.plot(trajectory[:, 0], trajectory[:, 1],
+                       color='red', linewidth=2.5, alpha=0.9, marker='o',
+                       markersize=5, label='Best solution path')
+
+                ax.plot(trajectory[0, 0], trajectory[0, 1],
+                       'go', markersize=12, markeredgecolor='white',
+                       markeredgewidth=2, label='Start', zorder=5)
+
+                ax.plot(trajectory[-1, 0], trajectory[-1, 1],
+                       'bs', markersize=12, markeredgecolor='white',
+                       markeredgewidth=2, label='End', zorder=5)
+
+                ax.set_xlim([x_min - padding_x, x_max + padding_x])
+                ax.set_ylim([y_min - padding_y, y_max + padding_y])
+
+            ax.set_xlabel('x₁', fontweight='bold', fontsize=11)
+            ax.set_ylabel('x₂', fontweight='bold', fontsize=11)
+            ax.set_title(f"Worst Config - Failure\n{worst_success_rate:.0%} success | f={failed_run['final_best_f']:.4f} | seed={failed_run['seed']}",
+                        fontweight='bold', fontsize=11)
+            ax.legend(loc='best', fontsize=9, framealpha=0.9)
+            ax.grid(True, alpha=0.4, linestyle='--')
+
+    plt.suptitle(f"{algo} Trajectories: Best vs Worst Configurations",
+                 fontsize=16, fontweight='bold')
+    plt.tight_layout()
 
     output_path = FIGURES_DIR / output_file
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f"[SAVED] Trajectory plots to {output_path}")
+    print(f"[SAVED] {algo} trajectory plots to {output_path}")
     plt.close()
 
 
@@ -632,11 +987,17 @@ def main():
     print(f"Summary CSV contains {len(df)} runs")
     print()
 
-    # Identify best configurations
+    # Identify best and worst configurations
     print("Identifying best configurations...")
     best_configs = get_best_configs(df, n_configs=2)
     for algo, configs in best_configs.items():
         print(f"  {algo}: {configs}")
+    print()
+
+    print("Identifying worst configurations...")
+    worst_configs = get_worst_configs(df)
+    for algo, config in worst_configs.items():
+        print(f"  {algo}: {config}")
     print()
 
     # Define grid parameters for heatmaps
@@ -654,23 +1015,30 @@ def main():
     print("Generating figures...")
     print()
 
-    print("1. Convergence plot...")
+    print("1. Convergence plot (top 2 configs)...")
     plot_convergence(raw_results, best_configs)
 
-    print("2. ECDF plot...")
+    print("2. Convergence plot (best vs worst)...")
+    plot_convergence_best_vs_worst(raw_results, best_configs, worst_configs, df)
+
+    print("3. ECDF plot...")
     plot_ecdf(df, best_configs)
 
-    print("3. Heatmaps...")
+    print("4. Heatmaps...")
     if 'PSO' in best_configs:
         plot_heatmaps(df, 'PSO', PSO_GRID, "heatmap_pso.png")
     if 'GA' in best_configs:
         plot_heatmaps(df, 'GA', GA_GRID, "heatmap_ga.png")
 
-    print("4. Basin coverage...")
+    print("5. Basin coverage...")
     plot_basin_coverage(df, best_configs)
 
-    print("5. Trajectory plots...")
-    plot_trajectories(raw_results, best_configs)
+    print("6. Trajectory plots...")
+    for algo in best_configs.keys():
+        best_config = best_configs[algo][0]
+        worst_config = worst_configs[algo]
+        output_file = f"trajectories_{algo.lower()}.png"
+        plot_trajectories_single_algo(raw_results, algo, best_config, worst_config, df, output_file)
 
     print()
     print("=" * 80)
