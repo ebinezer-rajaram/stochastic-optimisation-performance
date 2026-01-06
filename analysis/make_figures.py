@@ -4,7 +4,7 @@ Comprehensive analysis script for generating figures from experiment results.
 Reads results/raw JSON files and results/summary.csv to produce:
 1) Convergence plot: median best_f_by_eval with IQR band for best 1-2 configs per algorithm
 2) ECDF plot of evals_to_target for each algorithm (best config)
-3) Heatmaps (3x3) for each algorithm:
+3) Heatmaps (6x6) for each algorithm:
    - success rate (fraction with evals_to_target not None)
    - median final_best_f
    - median evals_to_target (on successful runs)
@@ -400,7 +400,7 @@ def plot_ecdf(df: pd.DataFrame, best_configs: Dict[str, List[str]],
 def plot_heatmaps(df: pd.DataFrame, algo: str, grid_params: Dict[str, List],
                  output_file: str):
     """
-    Create 3x3 heatmaps for a single algorithm showing:
+    Create 6x6 heatmaps for a single algorithm showing:
     1) Success rate
     2) Median final_best_f
     3) Median evals_to_target (successful runs only)
@@ -444,7 +444,7 @@ def plot_heatmaps(df: pd.DataFrame, algo: str, grid_params: Dict[str, List],
     # Parse configs
     algo_data['param1'], algo_data['param2'] = zip(*algo_data['config'].apply(parse_config))
 
-    # Create 3x3 matrices
+    # Create 6x6 matrices
     n_param1 = len(param1_values)
     n_param2 = len(param2_values)
 
@@ -471,8 +471,8 @@ def plot_heatmaps(df: pd.DataFrame, algo: str, grid_params: Dict[str, List],
                 else:
                     evals_matrix[i, j] = np.nan
 
-    # Create figure with 3 subplots
-    fig = plt.figure(figsize=(18, 5))
+    # Create figure with 3 subplots (adjusted height for 6x6 grid)
+    fig = plt.figure(figsize=(22, 7))
     gs = GridSpec(1, 3, figure=fig, wspace=0.45)
 
     # Heatmap 1: Success rate
@@ -494,7 +494,7 @@ def plot_heatmaps(df: pd.DataFrame, algo: str, grid_params: Dict[str, List],
             text_color = 'white' if value < 0.5 else 'black'
             text = ax1.text(j, i, f'{value:.0%}',
                           ha="center", va="center", color=text_color,
-                          fontsize=10, fontweight='bold')
+                          fontsize=8, fontweight='bold')
 
     cbar1 = plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
     cbar1.set_label('Success Rate', fontweight='bold')
@@ -571,7 +571,7 @@ def plot_heatmaps(df: pd.DataFrame, algo: str, grid_params: Dict[str, List],
 
             text = ax2.text(j, i, f'{value:.3f}',
                           ha="center", va="center", color=text_color,
-                          fontsize=9, fontweight='bold')
+                          fontsize=7, fontweight='bold')
 
     cbar2 = plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
     cbar2.set_label('Objective Value (target={:.4f})'.format(F_STAR), fontweight='bold')
@@ -623,11 +623,11 @@ def plot_heatmaps(df: pd.DataFrame, algo: str, grid_params: Dict[str, List],
                 text_color = 'black' if normalized_value < 0.7 else 'white'
                 text = ax3.text(j, i, f'{int(value)}',
                               ha="center", va="center", color=text_color,
-                              fontsize=9, fontweight='bold')
+                              fontsize=7, fontweight='bold')
             else:
                 text = ax3.text(j, i, 'N/A',
                               ha="center", va="center", color="darkgray",
-                              fontsize=9, fontweight='bold')
+                              fontsize=7, fontweight='bold')
 
     cbar3 = plt.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04)
     cbar3.set_label('Evaluations (lower=better)', fontweight='bold')
@@ -1002,13 +1002,13 @@ def main():
 
     # Define grid parameters for heatmaps
     PSO_GRID = {
-        "swarm_size": [10, 20, 40],
-        "w": [0.4, 0.7, 0.9]
+        "swarm_size": [5, 10, 15, 20, 30, 40],
+        "w": [0.3, 0.4, 0.5, 0.6, 0.7, 0.9]
     }
 
     GA_GRID = {
-        "pop_size": [20, 50, 100],
-        "mut_sigma": [0.1, 0.5, 1.0]
+        "pop_size": [10, 20, 30, 50, 75, 100],
+        "mut_sigma": [0.05, 0.1, 0.3, 0.5, 0.7, 1.0]
     }
 
     # Generate figures

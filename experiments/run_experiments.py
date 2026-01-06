@@ -53,16 +53,16 @@ BUDGET = 1000
 
 # PSO grid parameters
 PSO_GRID = {
-    "swarm_size": [10, 20, 40],
-    "w": [0.4, 0.7, 0.9],
+    "swarm_size": [5, 10, 15, 20, 30, 40],
+    "w": [0.3, 0.4, 0.5, 0.6, 0.7, 0.9],
     "c1": [1.5],  # Fixed as per specification
     "c2": [1.5]   # Fixed as per specification
 }
 
 # GA grid parameters
 GA_GRID = {
-    "pop_size": [20, 50, 100],
-    "mut_sigma": [0.1, 0.5, 1.0],
+    "pop_size": [10, 20, 30, 50, 75, 100],
+    "mut_sigma": [0.05, 0.1, 0.3, 0.5, 0.7, 1.0],
     "mut_prob": [0.2],  # Fixed as per specification
     "cx_prob": [0.9],   # Fixed as per specification
     "elitism": [1]      # Fixed as per specification
