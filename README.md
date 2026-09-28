@@ -1,18 +1,15 @@
-# Stochastic Optimisation Performance: PSO vs. Genetic Algorithms
-
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![NumPy](https://img.shields.io/badge/numpy-%E2%89%A51.24-013243.svg)](https://numpy.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+# PSO vs. Genetic Algorithms on a Deceptive Multimodal Landscape
 
 A controlled experimental study of how **Particle Swarm Optimisation (PSO)** and a **real-valued Genetic Algorithm (GA)** behave on the highly multimodal **Cross-in-Tray** function — measuring reliability, speed of convergence, and sensitivity to hyperparameters across **1,440 seeded runs**.
 
 Both algorithms are implemented from scratch in NumPy, evaluated under an identical budget with paired random seeds, and analysed with success-rate heatmaps, ECDFs of evaluations-to-target, convergence curves, basin coverage, and search-trajectory plots.
 
-> Developed as part of the *4M17 Practical Optimisation* module, University of Cambridge.
+<p align="center">
+  <img src="docs/figures/trajectories_pso.png" alt="PSO best-solution trajectories over the Cross-in-Tray landscape for best and worst configurations" width="85%">
+  <br><em>Best-solution paths of the best and worst PSO configurations over the Cross-in-Tray landscape (stars mark global minima). Even the failing run (bottom right) finds the right basin; it stalls at f = −20.6243, just outside the 10⁻³ success tolerance.</em>
+</p>
 
----
-
-## Key findings
+## Key results
 
 | | **PSO** | **GA** |
 |---|---|---|
@@ -34,15 +31,14 @@ Both algorithms are implemented from scratch in NumPy, evaluated under an identi
 </p>
 
 <p align="center">
-  <img src="docs/figures/ecdf_evals_to_target.png" alt="ECDF of evaluations to target for the best PSO and GA configurations" width="49%">
-  <img src="docs/figures/trajectories_pso.png" alt="PSO best-solution trajectories over the Cross-in-Tray landscape for best and worst configurations" width="49%">
+  <img src="docs/figures/ecdf_evals_to_target.png" alt="ECDF of evaluations to target for the best PSO and GA configurations" width="60%">
 </p>
 
 ---
 
 ## Problem
 
-The Cross-in-Tray function (coursework scaling) on $[-15, 15]^2$:
+The Cross-in-Tray function (scaled by 10× relative to the standard form) on $[-15, 15]^2$:
 
 $$
 f(\mathbf{x}) = -0.001\left(\left|\sin x_1 \sin x_2 \exp\!\left(\left|100 - \frac{\sqrt{x_1^2 + x_2^2}}{\pi}\right|\right)\right| + 1\right)^{0.1}
@@ -67,7 +63,7 @@ It has four symmetric global minima at $(\pm 1.3494, \pm 1.3494)$ with $f^\* \ap
 
 Every run logs best-so-far value per evaluation, best position and full population per iteration, evaluations-to-target, and the basin of attraction of the final solution ([`src/logging_utils.py`](src/logging_utils.py)).
 
-## Quickstart
+## Reproducing
 
 ```bash
 git clone https://github.com/ebinezer-rajaram/stochastic-optimisation-performance.git
@@ -112,6 +108,10 @@ python src/objective.py
 - **Basin coverage** — which of the four global minima each run converges to
 - **Search trajectories** — best-solution paths over the function landscape for fast, slow and failed runs
 
-## License
+## Acknowledgements
+
+Originally developed for 4M17 Practical Optimisation, Department of Engineering, University of Cambridge.
+
+## Licence
 
 [MIT](LICENSE) © Ebinezer Rajaram

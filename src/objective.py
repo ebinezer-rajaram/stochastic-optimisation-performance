@@ -2,7 +2,7 @@
 Cross-in-Tray objective function for optimization benchmarking.
 
 The Cross-in-Tray function is a multimodal test function with multiple global minima.
-Global minima: f(±1.3494, ±1.3494) ≈ -20.6261 (coursework scaling: -0.001 coefficient)
+Global minima: f(±1.3494, ±1.3494) ≈ -20.6261 (scaled variant: -0.001 coefficient)
 Domain: [-15, 15]²
 """
 
@@ -29,7 +29,7 @@ def cross_in_tray(x: np.ndarray) -> float:
     """
     Cross-in-Tray function with bounds enforcement.
 
-    Formula (per 4M17 coursework specification):
+    Formula (scaled variant, 10x the standard -0.0001 coefficient):
     f(x) = -0.001 * |sin(x₁)sin(x₂)exp(|100 - √(x₁² + x₂²)/π|)| + 1|^0.1
 
     Args:
@@ -49,7 +49,7 @@ def cross_in_tray(x: np.ndarray) -> float:
 
     x1, x2 = x[0], x[1]
 
-    # Compute the Cross-in-Tray function per coursework spec
+    # Compute the scaled Cross-in-Tray function
     term1 = np.sin(x1) * np.sin(x2)
     term2 = np.exp(np.abs(100.0 - np.sqrt(x1**2 + x2**2) / np.pi))
     inner = np.abs(term1 * term2) + 1.0
@@ -78,7 +78,7 @@ def _run_self_test() -> None:
     min_values = [cross_in_tray(m) for m in minima]
 
     print(f"  Minimum values at known optima: {min_values}")
-    print(f"  (Note: Coursework uses -0.001 coefficient, not standard -0.0001)")
+    print(f"  (Note: scaled variant uses -0.001 coefficient, not standard -0.0001)")
 
     # Check symmetry (all four should be equal)
     for i in range(1, len(min_values)):
