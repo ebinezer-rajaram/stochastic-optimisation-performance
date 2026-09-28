@@ -2,7 +2,7 @@
 Cross-in-Tray objective function for optimization benchmarking.
 
 The Cross-in-Tray function is a multimodal test function with multiple global minima.
-Global minima: f(±1.3491, ±1.3491) ≈ -2.06261
+Global minima: f(±1.3494, ±1.3494) ≈ -20.6261 (coursework scaling: -0.001 coefficient)
 Domain: [-15, 15]²
 """
 
