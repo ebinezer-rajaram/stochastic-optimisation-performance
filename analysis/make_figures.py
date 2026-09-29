@@ -756,7 +756,7 @@ def select_representative_runs(raw_results: Dict[str, Dict[str, List[Dict]]],
             slow_run = max(successful, key=lambda r: r['evals_to_target'])
 
     if len(failed) > 0:
-        # Pick a random failed run
+        # First failed run in directory-listing order (not necessarily the worst)
         failed_run = failed[0]
 
     return fast_run, slow_run, failed_run
@@ -1026,9 +1026,9 @@ def main():
 
     print("4. Heatmaps...")
     if 'PSO' in best_configs:
-        plot_heatmaps(df, 'PSO', PSO_GRID, "heatmap_pso.png")
+        plot_heatmaps(df, 'PSO', PSO_GRID, "heatmap_pso_6x6.png")
     if 'GA' in best_configs:
-        plot_heatmaps(df, 'GA', GA_GRID, "heatmap_ga.png")
+        plot_heatmaps(df, 'GA', GA_GRID, "heatmap_ga_6x6.png")
 
     print("5. Basin coverage...")
     plot_basin_coverage(df, best_configs)

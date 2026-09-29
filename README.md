@@ -6,7 +6,7 @@ Both algorithms are implemented from scratch in NumPy, evaluated under an identi
 
 <p align="center">
   <img src="docs/figures/trajectories_pso.png" alt="PSO best-solution trajectories over the Cross-in-Tray landscape for best and worst configurations" width="85%">
-  <br><em>Best-solution paths of the best and worst PSO configurations over the Cross-in-Tray landscape (stars mark global minima). Even the failing run (bottom right) finds the right basin; it stalls at f = −20.6243, just outside the 10⁻³ success tolerance.</em>
+  <br><em>Best-solution paths of the best and worst PSO configurations over the Cross-in-Tray landscape (stars mark global minima). Even a failing run from the worst configuration (bottom right) finds the right basin; it stalls at f = −20.6243, just outside the 10⁻³ success tolerance.</em>
 </p>
 
 ## Key results
@@ -68,17 +68,21 @@ Every run logs best-so-far value per evaluation, best position and full populati
 ```bash
 git clone https://github.com/ebinezer-rajaram/stochastic-optimisation-performance.git
 cd stochastic-optimisation-performance
-pip install -r requirements.txt
+uv venv && uv pip install -r requirements.txt
+
+# Run everything from the repository root, as modules
 
 # 1. Run the full grid search (writes results/raw/**.json and results/summary.csv)
-python -m experiments.run_experiments
+uv run python -m experiments.run_experiments
 
 # 2. Generate all figures into results/figures/
-python analysis/make_figures.py
+uv run python -m analysis.make_figures
 
 # Sanity-check the objective function
-python src/objective.py
+uv run python -m src.objective
 ```
+
+The README figures in `docs/figures/` are copies of `results/figures/trajectories_pso.png`, `heatmap_pso_6x6.png`, `heatmap_ga_6x6.png` and `ecdf_evals_to_target.png`.
 
 ## Repository structure
 
